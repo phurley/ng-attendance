@@ -1,0 +1,22 @@
+name: ng-attendance
+version: 0.1.0
+
+authors:
+  - Patrick Hurley <phurley@gmail.com>
+
+targets:
+  ng-attendance:
+    main: src/ng-attendance.cr
+
+dependencies:
+  kemal:
+    github: kemalcr/kemal
+  pg:
+    github: will/crystal-pg
+  jennifer:
+    github: imdrasil/jennifer.cr
+    version: "~> 0.11.1"
+
+crystal: 1.1.1
+
+license: MIT
