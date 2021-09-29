@@ -70,6 +70,12 @@ post "/checkin" do |env|
   m.to_json
 end
 
+get "/students" do |env|
+  s = User.where { (_mentor == false) }
+
+  s.to_a.to_json
+end
+
 get "/user" do |env|
   email = env.params.query["email"]?
   id = env.params.query["student_number"]?
