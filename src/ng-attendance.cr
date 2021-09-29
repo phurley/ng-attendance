@@ -105,4 +105,7 @@ get "/user" do |env|
   s.to_a.first.id.to_json
 end
 
-Kemal.run
+Kemal.run do |config|
+  config.server.not_nil!.bind_unix "/tmp/attendance.socket"
+end
+
