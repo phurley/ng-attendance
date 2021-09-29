@@ -1,279 +1,157 @@
 module Main exposing (main)
 
+import Browser exposing (UrlRequest)
+import Browser.Navigation as Navigation
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
-import Browser.Navigation as Navigation
-import Browser exposing (UrlRequest)
+import Http
+import Json.Decode exposing (Decoder, field, int, list, map2, string)
 import Url exposing (Url)
 import Url.Parser as UrlParser exposing ((</>), Parser, s, top)
-import Bootstrap.Navbar as Navbar
-import Bootstrap.Grid as Grid
-import Bootstrap.Grid.Col as Col
-import Bootstrap.Card as Card
-import Bootstrap.Card.Block as Block
-import Bootstrap.Button as Button
-import Bootstrap.ListGroup as Listgroup
-import Bootstrap.Modal as Modal
 
-type alias Model = 
-    {
-        mode : Mode
-        }
-
-type Mode 
-    = Welcome
-    | Register
-    | Login
-    | CheckIn
-    | Staus
 
 main =
-    Grid.container []
-        [ Grid.row []
-            [ 
-                Grid.col [] [ text "Some content for my view here!"]
-            ],
-            Grid.row[] [ Grid.col [] [ text "Hello"] ]
-        ]
+    Browser.element
+        { view = view
+        , init = init
+        , update = update
+        , subscriptions = always Sub.none
+        }
 
-{-
-type alias Flags =
-    {}
 
 type alias Model =
-    { navKey : Navigation.Key
-    , page : Page
-    , navState : Navbar.State
-    , modalVisibility : Modal.Visibility
+    { mode : Mode
+    , url : String
+    , students : List Student
     }
 
-type Page
-    = Home
-    | GettingStarted
-    | Modules
-    | NotFound
+
+type alias Student =
+    { name : String, id : Int }
 
 
-main : Program Flags Model Msg
-main =
-    Browser.application
-        { init = init
-        , view = view
-        , update = update
-        , subscriptions = subscriptions
-        , onUrlRequest = ClickedLink
-        , onUrlChange = UrlChange
+type Mode
+    = Welcome
+    | Login
+    | Status
+    | Register
+--    | CheckIn
+
+
+init : String -> ( Model, Cmd Msg )
+init url =
+    ( { mode = Welcome, url = url, students = [] }
+    , Http.get
+        { url = "http://localhost:1234/students"
+        , expect = Http.expectJson GotStudents (Json.Decode.list studentDecoder)
         }
-
-init : Flags -> Url -> Navigation.Key -> ( Model, Cmd Msg )
-init flags url key =
-    let
-        ( navState, navCmd ) =
-            Navbar.initialState NavMsg
-
-        ( model, urlCmd ) =
-            urlUpdate url { navKey = key, navState = navState, page = Home, modalVisibility= Modal.hidden }
-    in
-        ( model, Cmd.batch [ urlCmd, navCmd ] )
+    )
 
 
+studentDecoder : Decoder Student
+studentDecoder =
+    map2 Student
+        (field "name" string)
+        (field "id" int)
 
 
 type Msg
-    = UrlChange Url
-    | ClickedLink UrlRequest
-    | NavMsg Navbar.State
-    | CloseModal
-    | ShowModal
-
-
-subscriptions : Model -> Sub Msg
-subscriptions model =
-    Navbar.subscriptions model.navState NavMsg
+    = GotoLogin
+    | GotoStatus
+    | GotoWelcome
+    | GotoRegister
+    | GotStudents (Result Http.Error (List Student))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        ClickedLink req ->
-             case req of
-                 Browser.Internal url ->
-                     ( model, Navigation.pushUrl model.navKey <| Url.toString url )
+        GotoLogin ->
+            ( { model | mode = Login }, Cmd.none )
 
-                 Browser.External href ->
-                     ( model, Navigation.load href )
+        GotoStatus ->
+            ( { model | mode = Status }, Cmd.none )
 
+        GotoWelcome ->
+            ( { model | mode = Welcome }, Cmd.none )
 
-        UrlChange url ->
-            urlUpdate url model
+        GotoRegister ->
+            ( { model | mode = Register }, Cmd.none )
 
-        NavMsg state ->
-            ( { model | navState = state }
-            , Cmd.none
-            )
+        GotStudents result ->
+            case result of
+                Ok students ->
+                    ( { model | students = students }, Cmd.none )
 
-        CloseModal ->
-            ( { model | modalVisibility = Modal.hidden }
-            , Cmd.none
-            )
-
-        ShowModal ->
-            ( { model | modalVisibility = Modal.shown }
-            , Cmd.none
-            )
+                Err _ ->
+                    Debug.log "Http Error"
+                        ( model, Cmd.none )
 
 
-
-urlUpdate : Url -> Model -> ( Model, Cmd Msg )
-urlUpdate url model =
-    case decode url of
-        Nothing ->
-            ( { model | page = NotFound }, Cmd.none )
-
-        Just route ->
-            ( { model | page = route }, Cmd.none )
-
-
-decode : Url -> Maybe Page
-decode url =
-    { url | path = Maybe.withDefault "" url.fragment, fragment = Nothing }
-    |> UrlParser.parse routeParser
-
-
-routeParser : Parser (Page -> a) a
-routeParser =
-    UrlParser.oneOf
-        [ UrlParser.map Home top
-        , UrlParser.map GettingStarted (UrlParser.s "getting-started")
-        , UrlParser.map Modules (UrlParser.s "modules")
-        ]
-
-
-view : Model -> Browser.Document Msg
+view : Model -> Html Msg
 view model =
-    { title = "Elm Bootstrap"
-    , body =
-        [ div []
-            [ menu model
-            , mainContent model
-            , modal model
-            ]
+    case model.mode of
+        Welcome ->
+            viewWelcome model
+
+        Login ->
+            viewLogin model
+
+        Status ->
+            viewStatus model
+
+        Register ->
+            viewRegister model
+
+
+viewWelcome model =
+    div []
+        [ mkButton "Login" GotoLogin
+        , br [] []
+        , mkButton "Register" GotoRegister
         ]
-    }
 
 
-
-menu : Model -> Html Msg
-menu model =
-    Navbar.config NavMsg
-        |> Navbar.withAnimation
-        |> Navbar.container
-        |> Navbar.brand [ href "#" ] [ text "Elm Bootstrap" ]
-        |> Navbar.items
-            [ Navbar.itemLink [ href "#getting-started" ] [ text "Getting started" ]
-            , Navbar.itemLink [ href "#modules" ] [ text "Modules" ]
-            ]
-        |> Navbar.view model.navState
+viewStatus model =
+    div [] [ mkButton "Welcome" GotoWelcome ]
 
 
-mainContent : Model -> Html Msg
-mainContent model =
-    Grid.container [] <|
-        case model.page of
-            Home ->
-                pageHome model
-
-            GettingStarted ->
-                pageGettingStarted model
-
-            Modules ->
-                pageModules model
-
-            NotFound ->
-                pageNotFound
-
-
-pageHome : Model -> List (Html Msg)
-pageHome model =
-    [ h1 [] [ text "Home" ]
-    , Grid.row []
-        [ Grid.col []
-            [ Card.config [ Card.outlinePrimary ]
-                |> Card.headerH4 [] [ text "Getting started" ]
-                |> Card.block []
-                    [ Block.text [] [ text "Getting started is real easy. Just click the start button." ]
-                    , Block.custom <|
-                        Button.linkButton
-                            [ Button.primary, Button.attrs [ href "#getting-started" ] ]
-                            [ text "Start" ]
-                    ]
-                |> Card.view
-            ]
-        , Grid.col []
-            [ Card.config [ Card.outlineDanger ]
-                |> Card.headerH4 [] [ text "Modules" ]
-                |> Card.block []
-                    [ Block.text [] [ text "Check out the modules overview" ]
-                    , Block.custom <|
-                        Button.linkButton
-                            [ Button.primary, Button.attrs [ href "#modules" ] ]
-                            [ text "Module" ]
-                    ]
-                |> Card.view
-            ]
+viewLogin model =
+    div [] 
+        [  mkCombo "Student" model.students 
+           , mkButton "Status" GotoStatus 
         ]
-    ]
 
 
-pageGettingStarted : Model -> List (Html Msg)
-pageGettingStarted model =
-    [ h2 [] [ text "Getting started" ]
-    , Button.button
-        [ Button.success
-        , Button.large
-        , Button.block
-        , Button.attrs [ onClick ShowModal ]
+viewRegister model =
+    div []
+        [ mkInput "First Name"
+        , mkInput "Last Name"
+        , mkInput "Student Id"
+        , mkButton "Register" GotoLogin
         ]
-        [ text "Click me" ]
-    ]
 
 
-pageModules : Model -> List (Html Msg)
-pageModules model =
-    [ h1 [] [ text "Modules" ]
-    , Listgroup.ul
-        [ Listgroup.li [] [ text "Alert" ]
-        , Listgroup.li [] [ text "Badge" ]
-        , Listgroup.li [] [ text "Card" ]
+viewCheckIn model =
+    div []
+        [ mkInput "Name"
+        , mkButton "Check In" GotoWelcome
         ]
-    ]
 
 
-pageNotFound : List (Html Msg)
-pageNotFound =
-    [ h1 [] [ text "Not found" ]
-    , text "SOrry couldn't find that page"
-    ]
+mkButton label action =
+    Html.button [ onClick action, class "button-primary" ] [ text label ]
 
 
-modal : Model -> Html Msg
-modal model =
-    Modal.config CloseModal
-        |> Modal.small
-        |> Modal.h4 [] [ text "Getting started ?" ]
-        |> Modal.body []
-            [ Grid.containerFluid []
-                [ Grid.row []
-                    [ Grid.col
-                        [ Col.xs6 ]
-                        [ text "Col 1" ]
-                    , Grid.col
-                        [ Col.xs6 ]
-                        [ text "Col 2" ]
-                    ]
-                ]
-            ]
-        |> Modal.view model.modalVisibility
+mkInput : String -> Html msg
+mkInput label =
+    mkField label (String.toLower (String.replace " " "_" label))
 
--}
+
+mkField : String -> String -> Html msg
+mkField label nam =
+    Html.span []
+        [ Html.label [ for nam ] [ text label ]
+        , Html.input [ id nam, class "u-full-width", name nam, required True ] []
+        ]
