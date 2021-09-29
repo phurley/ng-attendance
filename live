@@ -1,4 +1,4 @@
 #!/bin/bash
 
-find src | entr -d elm make src/Main.elm --debug --output=public/elm.js
+find src | entr -d -s 'elm-format --yes src/Main.elm; elm make src/Main.elm --debug --output=public/elm.js'
 

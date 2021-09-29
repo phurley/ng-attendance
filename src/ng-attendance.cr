@@ -7,7 +7,7 @@ require "jennifer/adapter/postgres"
 I18n.init
 
 Jennifer::Config.configure do |conf|
-  env = ENV["APP_ENV"]? || "postgres" 
+  env = ENV["APP_ENV"]? || "postgres"
   conf.read("./database.yml", "postgres")
   conf.from_uri(ENV["DATABASE_URI"]) if ENV.has_key?("DATABASE_URI")
   conf.logger.level = :debug
@@ -74,9 +74,18 @@ post "/checkin" do |env|
   m.to_json
 end
 
-get "/students" do |env|
+post "/register" do |env|
+  name = env.params.json["name"].as(String)
+  email = env.params.json["email"].as(String)
+  studid = env.params.json["student_id"].as(String)
+  User.create(email: email, name: name, student_number: studid, admin: false, mentor: false)
   s = User.where { (_mentor == false) }
+    .order(name: "asc")
+  s.to_a.to_json
+end
 
+get "/students" do |env|
+  s = User.where { (_mentor == false) }.order(name: "asc")
   s.to_a.to_json
 end
 
@@ -116,6 +125,6 @@ get "/user" do |env|
 end
 
 Kemal.run do |config|
+  config.server.not_nil!.bind_tcp 1234
   config.server.not_nil!.bind_unix "/tmp/attendance.socket"
 end
-
