@@ -2,10 +2,15 @@
 
 root * ./public
 
+#reverse_proxy /api/* unix//tmp/attendance.socket
 header {
 	Access-Control-Allow-Origin *
 }
+
+@api {
+	path_regexp api ^/api/(.*)$
+}
+
+rewrite @api /{re.api.1}
+reverse_proxy @api unix//tmp/attendance.socket
 file_server
-
-# reverse_proxy localhost:3000
-
