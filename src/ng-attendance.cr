@@ -6,8 +6,12 @@ require "jennifer/adapter/postgres"
 # I18n.load_path += ["./config/locales"]
 I18n.init
 
-# env = "postgres" # ENV["environment"]
-Jennifer::Config.read("./database.yml", "postgres")
+Jennifer::Config.configure do |conf|
+  env = ENV["APP_ENV"]? || "postgres" 
+  conf.read("./database.yml", "postgres")
+  conf.from_uri(ENV["DATABASE_URI"]) if ENV.has_key?("DATABASE_URI")
+  conf.logger.level = :debug
+end
 
 class User < Jennifer::Model::Base
   mapping(
