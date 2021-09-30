@@ -1,1 +1,16 @@
+:1234 {
+    root * ./public
 
+    #reverse_proxy /api/* unix//tmp/attendance.socket
+    header {
+        Access-Control-Allow-Origin *
+    }
+
+
+    handle_path /api/* {
+        rewrite * {path}
+        reverse_proxy unix//tmp/attendance.socket 
+    }
+
+    file_server
+}
