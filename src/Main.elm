@@ -4,7 +4,7 @@ import Browser exposing (UrlRequest)
 import Browser.Navigation as Navigation
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onInput)
+import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode exposing (Decoder, field, int, list, map2, string)
 import Json.Encode as Encode
@@ -27,7 +27,9 @@ type alias Model =
     , name : String
     , email : String
     , student_id : String
+    , flash : String
     , students : List Student
+    , checkedIn : List String
     }
 
 
@@ -45,9 +47,9 @@ type Mode
 
 init : String -> ( Model, Cmd Msg )
 init url =
-    ( { mode = Welcome, url = url, name = "", email = "", student_id = "", students = [] }
+    ( { mode = Welcome, url = url, name = "", email = "", student_id = "", flash = "", students = [], checkedIn = [] }
     , Http.get
-        { url = "http://localhost:1234/students"
+        { url = "/api/students"
         , expect = Http.expectJson GotStudents (Json.Decode.list studentDecoder)
         }
     )
@@ -60,6 +62,11 @@ studentDecoder =
         (field "id" int)
 
 
+nameDecoder : Decoder (List String)
+nameDecoder =
+    Json.Decode.list string
+
+
 type Msg
     = GotoLogin
     | GotoStatus
@@ -67,11 +74,35 @@ type Msg
     | GotoRegister
     | GotoCheckin
     | CompleteRegistration
+    | CompleteCheckin
+    | CompleteLogin
     | GotStudents (Result Http.Error (List Student))
     | GotRegistration (Result Http.Error (List Student))
+    | GotCheckin (Result Http.Error ())
+    | GotLogin (Result Http.Error (List String))
     | UpdateName String
     | UpdateEmail String
     | UpdateStudentId String
+    | DoNothing
+
+
+findId model =
+    let
+        name =
+            model.name
+
+        students =
+            model.students
+
+        found =
+            List.head (List.filter (\s -> s.name == name) students)
+    in
+    case found of
+        Just student ->
+            student.id
+
+        Nothing ->
+            -1
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -87,26 +118,67 @@ update msg model =
             ( { model | mode = Welcome }, Cmd.none )
 
         GotoCheckin ->
-            ( { model | mode = Register }, Cmd.none )
+            ( { model | mode = CheckIn }, Cmd.none )
 
         GotoRegister ->
             ( { model | mode = Register }, Cmd.none )
 
-        CompleteRegistration ->
-            ( { model | mode = Welcome }
-            , Http.post
-                { url = "http://localhost:1234/register"
-                , body =
-                    Http.jsonBody
-                        (Encode.object
-                            [ ( "name", Encode.string model.name )
-                            , ( "email", Encode.string model.email )
-                            , ( "student_id", Encode.string model.student_id )
-                            ]
-                        )
-                , expect = Http.expectJson GotRegistration (Json.Decode.list studentDecoder)
+        CompleteCheckin ->
+            ( { model | flash = "Processing" }
+            , Http.request
+                { method = "POST"
+                , expect = Http.expectJson GotLogin nameDecoder
+                , headers = [ Http.header "User" (String.fromInt (findId model)) ]
+                , url = "/api/checkin"
+                , body = Http.emptyBody
+                , timeout = Nothing
+                , tracker = Nothing
                 }
             )
+
+        CompleteLogin ->
+            ( { model | flash = "Processing" }
+            , Http.request
+                { method = "POST"
+                , expect = Http.expectWhatever GotCheckin
+                , headers = [ Http.header "User" (String.fromInt (findId model)) ]
+                , url = "/api/checkin"
+                , body = Http.emptyBody
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+            )
+
+        CompleteRegistration ->
+            if String.isEmpty model.name then
+                ( { model | flash = "Name cannot be blank", mode = Register }, Cmd.none )
+
+            else if String.isEmpty model.email then
+                ( { model | flash = "Email cannot be blank", mode = Register }, Cmd.none )
+
+            else
+                ( { model | flash = "Processing" }
+                , Http.post
+                    { url = "/api/register"
+                    , body =
+                        Http.jsonBody
+                            (Encode.object
+                                [ ( "name", Encode.string model.name )
+                                , ( "email", Encode.string model.email )
+                                , ( "student_id", Encode.string model.student_id )
+                                ]
+                            )
+                    , expect = Http.expectJson GotRegistration (Json.Decode.list studentDecoder)
+                    }
+                )
+
+        GotLogin result ->
+            case result of
+                Ok checkedIn ->
+                    ( { model | mode = Status, checkedIn = checkedIn }, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
 
         GotStudents result ->
             case result of
@@ -120,74 +192,102 @@ update msg model =
         GotRegistration result ->
             case result of
                 Ok students ->
-                    ( { model | mode = CheckIn, students = students }, Cmd.none )
+                    ( { model | mode = CheckIn, students = students, flash = "Registered" }, Cmd.none )
 
-                Err _ ->
-                    Debug.log "Http Error"
-                        ( model, Cmd.none )
+                Err m ->
+                    ( { model | flash = "Unable to add new member, probably already registerd" }, Cmd.none )
+
+        GotCheckin result ->
+            case result of
+                Ok _ ->
+                    ( { model | mode = Status, flash = "Checked In" }, Cmd.none )
+
+                Err m ->
+                    ( { model | flash = "Something failed checking you in -- sorry." }, Cmd.none )
 
         UpdateName n ->
-            ( { model | name = n }, Cmd.none )
+            ( { model | flash = "", name = String.trimLeft n }, Cmd.none )
 
         UpdateEmail e ->
-            ( { model | email = e }, Cmd.none )
+            ( { model | flash = "", email = String.trim e }, Cmd.none )
 
         UpdateStudentId i ->
-            ( { model | student_id = i }, Cmd.none )
+            ( { model | flash = "", student_id = String.trim i }, Cmd.none )
+
+        DoNothing ->
+            ( { model | flash = "" }, Cmd.none )
 
 
 view : Model -> Html Msg
 view model =
     case model.mode of
         Welcome ->
-            viewWelcome model
+            layout viewWelcome model
 
         Login ->
-            viewLogin model
+            layout viewLogin model
 
         Status ->
-            viewStatus model
+            layout viewStatus model
 
         Register ->
-            viewRegister model
+            layout viewRegister model
 
         CheckIn ->
-            viewCheckIn model
+            layout viewCheckIn model
+
+
+layout v m =
+    div []
+        [ if not (String.isEmpty m.flash) then
+            div [ class "row flash" ]
+                [ div [ class "u-full-width" ] [ text m.flash ]
+                ]
+
+          else
+            div [] []
+        , div [] [ v m ]
+        ]
 
 
 viewWelcome model =
     div []
-        [ mkButton "Login" GotoLogin
+        [ mkButton "CheckIn" GotoCheckin
         , text " "
         , mkButton "Register" GotoRegister
         ]
 
 
 viewStatus model =
-    div [] [ mkButton "Welcome" GotoWelcome ]
+    div []
+        [ h2 [] [ text "Currently checked in students" ]
+        , ul [] (List.map (\name -> li [] [ text name ]) model.checkedIn)
+        ]
 
 
 viewLogin model =
-    div []
-        [ mkCombo "Student" model.students
-        , mkButton "Status" GotoStatus
-        , h2 [] [ text "Hi Pat" ]
+    Html.form [ onSubmit CompleteLogin ]
+        [ mkCombo "Student" model.students model.name UpdateName
+        , mkInput "Student Id" model.student_id UpdateStudentId
+        , mkButton "Login" DoNothing
         ]
 
 
 viewRegister model =
-    div []
-        [ mkInput "Name" UpdateName
-        , mkInput "Student Id" UpdateStudentId
-        , mkInput "Email" UpdateEmail
-        , mkButton "Register" CompleteRegistration
+    Html.form [ onSubmit CompleteRegistration ]
+        [ mkInput "Name" model.name UpdateName
+        , mkInput "Student Id" model.student_id UpdateStudentId
+        , mkInput "Email" model.email UpdateEmail
+        , mkButton "Register" DoNothing
+        , text " "
+        , mkButton "Login" GotoLogin
         ]
 
 
 viewCheckIn model =
-    div []
-        [ mkInput "Name" UpdateName
-        , mkButton "Check In" GotoStatus
+    Html.form [ onSubmit CompleteCheckin ]
+        [ mkCombo "Student" model.students model.name UpdateName
+        , mkButton "Check In" DoNothing
         ]
 
 
@@ -199,7 +299,7 @@ student2Option stud =
     Html.option [ value stud.name ] []
 
 
-mkCombo label dlist =
+mkCombo label dlist val cmd =
     let
         nam =
             String.toLower (String.replace " " "_" label)
@@ -209,7 +309,7 @@ mkCombo label dlist =
     in
     Html.span []
         [ Html.label [ for nam ] [ text label ]
-        , Html.input [ id nam, class "u-full-width", name nam, required True, Html.Attributes.list lst ] []
+        , Html.input [ id nam, class "u-full-width", name nam, required True, Html.Attributes.list lst, value val, onInput cmd ] []
         , Html.datalist [ id lst ] (List.map student2Option dlist)
         ]
 
@@ -218,12 +318,12 @@ mkCombo label dlist =
 -- mkInput : String -> Html msg
 
 
-mkInput label cmd =
+mkInput label val cmd =
     let
         nam =
             String.toLower (String.replace " " "_" label)
     in
     Html.span []
         [ Html.label [ for nam ] [ text label ]
-        , Html.input [ id nam, class "u-full-width", name nam, required True, onInput cmd ] []
+        , Html.input [ id nam, class "u-full-width", name nam, value val, onInput cmd ] []
         ]

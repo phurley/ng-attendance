@@ -1,41 +1,14 @@
+require "pg"
+require "db"
 require "kemal"
 
-require "jennifer"
-require "jennifer/adapter/postgres"
-
-# I18n.load_path += ["./config/locales"]
-I18n.init
-
-Jennifer::Config.configure do |conf|
-  env = ENV["APP_ENV"]? || "postgres"
-  conf.read("./database.yml", "postgres")
-  conf.from_uri(ENV["DATABASE_URI"]) if ENV.has_key?("DATABASE_URI")
-  conf.logger.level = :debug
+if !ENV.has_key?("DATABASE_URI")
+  puts "Environment variable DATABASE_URI must be initialized"
+  exit -1
 end
 
-class User < Jennifer::Model::Base
-  mapping(
-    id: Primary32, # is an alias for Int32? primary key
-    email: String,
-    name: String,
-    student_number: String?,
-    admin: Bool,
-    mentor: Bool,
-  )
-
-  has_many :meetings, Meeting
-end
-
-class Meeting < Jennifer::Model::Base
-  table_name :meetings
-  mapping(
-    id: Primary32,
-    user_id: Int32,
-    at: Time
-  )
-
-  belongs_to :user, User
-end
+Db = DB.open ENV["DATABASE_URI"]
+db = Db
 
 struct Time
   def at_nearest_hour
@@ -50,78 +23,104 @@ struct Time
 end
 
 get "/" do |env|
-  puts env.request.headers.inspect
-  "Hello World!"
+  {:version => "1.0.0", :description => "A simple time logging API"}.to_json
 end
 
 get "/mentors" do
-  mentors = User.where { _mentor == true }
-  m = mentors.eager_load(:meetings).includes(:meetings).results
-  m.to_json
+  result = {} of String => Array(String)
+  db.query "SELECT name, at FROM users LEFT JOIN meetings ON users.id = meetings.user_id WHERE at IS NOT NULL ORDER BY users.name, meetings.at DESC" do |rs|
+    rs.each do
+      name = rs.read(String)
+      at = rs.read(Time).to_local.to_s("%F")
+
+      if result.has_key?(name)
+        result[name] << at
+      else
+        result[name] = [at]
+      end
+    end
+  end
+  result.to_json
 end
 
 get "/checkedin" do |env|
   id = env.request.headers["User"].to_i
   today_start = Time.local.at_beginning_of_day
   today_end = Time.local.at_end_of_day
-  m = Meeting.where { (_user_id == id) & (_at.between(today_start, today_end)) }
-  (m.count > 0).to_json
+
+  found = false
+  db.query "SELECT FROM meetings WHERE user_id = $1 AND at BETWEEN $2 AND $3 LIMIT 1", id, today_start, today_end do |rs|
+    rs.each do
+      found = true
+    end
+  end
+  found.to_json
 end
 
 post "/checkin" do |env|
   id = env.request.headers["User"].to_i
-  m = Meeting.create(user_id: id, at: Time.local.at_nearest_hour)
-  m.to_json
+  new_id = 0
+  Log.info { "Process check in for #{id}" }
+  db.exec "INSERT INTO meetings (user_id, at) VALUES ($1, $2) RETURNING id", id, Time.local.at_nearest_hour
+
+  today_start = Time.local.at_beginning_of_day
+  today_end = Time.local.at_end_of_day
+  result = [] of String
+
+  db.query "SELECT name FROM users LEFT JOIN meetings ON users.id = meetings.user_id WHERE at BETWEEN $1 AND $2 ORDER BY users.name", today_start, today_end do |rs|
+    rs.each do
+      name = rs.read(String)
+      result << name
+    end
+  end
+  result.to_json
+rescue ex : PQ::PQError
+  Log.error { "Error processing insert: #{ex.message}" }
+  halt env, status_code: 409, response: ex.message
+end
+
+def get_students
+  result = [] of NamedTuple(id: Int32, name: String)
+  Db.query "SELECT id, name FROM users WHERE mentor = 'f' ORDER BY users.name" do |rs|
+    rs.each do
+      result << {id: rs.read(Int32), name: rs.read(String)}
+    end
+  end
+  result
 end
 
 post "/register" do |env|
   name = env.params.json["name"].as(String)
   email = env.params.json["email"].as(String)
   studid = env.params.json["student_id"].as(String)
-  User.create(email: email, name: name, student_number: studid, admin: false, mentor: false)
-  s = User.where { (_mentor == false) }
-    .order(name: "asc")
-  s.to_a.to_json
+  studid = nil if studid.strip.empty?
+  db.exec "INSERT INTO users (name, email, student_number) VALUES ($1, $2, $3)", name, email, studid
+  get_students.to_json
+rescue ex : PQ::PQError
+  halt env, status_code: 409, response: ex.message
 end
 
 get "/students" do |env|
-  s = User.where { (_mentor == false) }.order(name: "asc")
-  s.to_a.to_json
+  get_students.to_json
 end
 
-get "/user" do |env|
-  email = env.params.query["email"]?
-  id = env.params.query["student_number"]?
-  mentor = env.params.query["mentor"]?
+get "/today" do |env|
+  today_start = Time.local.at_beginning_of_day
+  today_end = Time.local.at_end_of_day
+  result = [] of String
 
-  mentor = case mentor
-           when Nil
-             false
-           when .empty?
-             false
-           else
-             mentor.downcase[0] == 't'
-           end
-
-  if email.nil? || id.nil? && !mentor
-    halt env, status_code: 403, response: "not found"
+  db.query "SELECT name FROM users LEFT JOIN meetings ON users.id = meetings.user_id WHERE at BETWEEN $1 AND $2 ORDER BY users.name", today_start, today_end do |rs|
+    rs.each do
+      name = rs.read(String)
+      result << name
+    end
   end
+  result.to_json
+end
 
-  s = if mentor
-        User.where { (_email == email) & (_mentor == true) }
-      else
-        User.where { (_email == email) & (_student_number == id) & (_mentor == false) }
-      end
-
-  num = s.count
-  if num == 0
-    halt env, status_code: 403, response: "not found"
-  end
-  if num > 1
-    halt env, status_code: 500, response: "this should never happen"
-  end
-
-  s.to_a.first.id.to_json
+Signal::INT.trap do
+  puts "Shutting down!"
+  db.close
 end
 
 Kemal.run do |config|
