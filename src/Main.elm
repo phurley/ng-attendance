@@ -8,8 +8,6 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode exposing (Decoder, field, int, list, map2, string)
 import Json.Encode as Encode
-import Url exposing (Url)
-import Url.Parser as UrlParser exposing ((</>), Parser, s, top)
 
 
 main =
@@ -178,7 +176,7 @@ update msg model =
                     ( { model | mode = Status, checkedIn = checkedIn }, Cmd.none )
 
                 Err _ ->
-                    ( model, Cmd.none )
+                    ( { model | flash = "Unable to check, please verify your name" }, Cmd.none )
 
         GotStudents result ->
             case result of
@@ -186,8 +184,7 @@ update msg model =
                     ( { model | students = students }, Cmd.none )
 
                 Err _ ->
-                    Debug.log "Http Error"
-                        ( model, Cmd.none )
+                    ( model, Cmd.none )
 
         GotRegistration result ->
             case result of

@@ -11064,7 +11064,6 @@ var $elm$http$Http$jsonBody = function (value) {
 		'application/json',
 		A2($elm$json$Json$Encode$encode, 0, value));
 };
-var $elm$core$Debug$log = _Debug_log;
 var $author$project$Main$nameDecoder = $elm$json$Json$Decode$list($elm$json$Json$Decode$string);
 var $elm$http$Http$post = function (r) {
 	return $elm$http$Http$request(
@@ -11194,7 +11193,11 @@ var $author$project$Main$update = F2(
 							{checkedIn: checkedIn, mode: $author$project$Main$Status}),
 						$elm$core$Platform$Cmd$none);
 				} else {
-					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
+					return _Utils_Tuple2(
+						_Utils_update(
+							model,
+							{flash: 'Unable to check, please verify your name'}),
+						$elm$core$Platform$Cmd$none);
 				}
 			case 'GotStudents':
 				var result = msg.a;
@@ -11206,10 +11209,7 @@ var $author$project$Main$update = F2(
 							{students: students}),
 						$elm$core$Platform$Cmd$none);
 				} else {
-					return A2(
-						$elm$core$Debug$log,
-						'Http Error',
-						_Utils_Tuple2(model, $elm$core$Platform$Cmd$none));
+					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
 			case 'GotRegistration':
 				var result = msg.a;
