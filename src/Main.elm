@@ -8,6 +8,7 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode exposing (Decoder, field, int, list, map2, string)
 import Json.Encode as Encode
+import Time
 
 
 main =
@@ -15,7 +16,7 @@ main =
         { view = view
         , init = init
         , update = update
-        , subscriptions = always Sub.none
+        , subscriptions = subscriptions
         }
 
 
@@ -78,10 +79,17 @@ type Msg
     | GotRegistration (Result Http.Error (List Student))
     | GotCheckin (Result Http.Error ())
     | GotLogin (Result Http.Error (List String))
+    | GotStatusUpdate (Result Http.Error (List String))
     | UpdateName String
     | UpdateEmail String
     | UpdateStudentId String
+    | Tick Time.Posix
     | DoNothing
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Time.every 1000 Tick
 
 
 findId model =
@@ -202,6 +210,14 @@ update msg model =
                 Err m ->
                     ( { model | flash = "Something failed checking you in -- sorry." }, Cmd.none )
 
+        GotStatusUpdate result ->
+            case result of
+                Ok _ ->
+                    ( { model | mode = Status, flash = "" }, Cmd.none )
+
+                Err m ->
+                    ( { model | flash = "Something failed during status update -- sorry." }, Cmd.none )
+
         UpdateName n ->
             ( { model | flash = "", name = String.trimLeft n }, Cmd.none )
 
@@ -210,6 +226,23 @@ update msg model =
 
         UpdateStudentId i ->
             ( { model | flash = "", student_id = String.trim i }, Cmd.none )
+
+        Tick _ ->
+            if model.mode == Status then
+                ( { model | flash = "" }
+                , Http.request
+                    { method = "GET"
+                    , expect = Http.expectJson GotStatusUpdate nameDecoder
+                    , headers = []
+                    , url = "/api/today"
+                    , body = Http.emptyBody
+                    , timeout = Nothing
+                    , tracker = Nothing
+                    }
+                )
+
+            else
+                ( { model | flash = "" }, Cmd.none )
 
         DoNothing ->
             ( { model | flash = "" }, Cmd.none )
@@ -252,6 +285,8 @@ viewWelcome model =
         [ mkButton "CheckIn" GotoCheckin
         , text " "
         , mkButton "Register" GotoRegister
+        , text " "
+        , mkButton "Status" GotoStatus
         ]
 
 
