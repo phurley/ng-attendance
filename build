@@ -1,12 +1,20 @@
 #!/bin/bash
 
+hashcode=$(git log -1 src/Main.elm | head -1|cut -f2 -d ' ')
+echo $hashcode
+
 crystal build --no-debug --release -p src/ng-attendance.cr
 
 elm make --optimize src/Main.elm --output public/elm.js
-uglifyjs public/elm.js --compress 'pure_funcs=[F2,F3,F4,F5,F6,F7,F8,F9,A2,A3,A4,A5,A6,A7,A8,A9],pure_getters,keep_fargs=false,unsafe_comps,unsafe' | uglifyjs --mangle --output public/elm.min.js
+minjsname=elm.min.$hashcode.js
+uglifyjs public/elm.js --compress 'pure_funcs=[F2,F3,F4,F5,F6,F7,F8,F9,A2,A3,A4,A5,A6,A7,A8,A9],pure_getters,keep_fargs=false,unsafe_comps,unsafe' | uglifyjs --mangle --output public/$minjsname
 
-cd public/css
-cleancss -O2 fonts.css normalize.css skeleton.css application.css > frc862.min.css
+pushd public/css
+hashcode=$(git log -1 application.css | head -1|cut -f2 -d ' ')
+mincssname=frc862.min.$hashcode.css
+cleancss -O2 fonts.css normalize.css skeleton.css application.css > $mincssname
+popd
 
-
+sed -i "" "s/script src=\".*\"/script src=\"$minjsname\"/" public/index.html
+sed -i "" "s/href=\"frc862.*\"/href=\"$mincssname\"/" public/index.html
 
