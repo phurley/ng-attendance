@@ -13,8 +13,16 @@ pushd public/css
 hashcode=$(git log -1 application.css | head -1|cut -f2 -d ' ')
 mincssname=frc862.min.$hashcode.css
 cleancss -O2 fonts.css normalize.css skeleton.css application.css > $mincssname
+gzip -k $mincssname
+brotli -k $mincssname
 popd
 
 sed -i "" "s/script src=\".*\"/script src=\"$minjsname\"/" public/index.html
 sed -i "" "s/href=\"frc862.*\"/href=\"$mincssname\"/" public/index.html
+pushd public
+gzip -k index.html
+brotli -k index.html
+
+gzip -k $minjsname
+brotli -k $minjsname
 
