@@ -125,5 +125,7 @@ end
 
 Kemal.run do |config|
   # config.server.not_nil!.bind_tcp 1234
-  config.server.not_nil!.bind_unix "/tmp/attendance.socket"
+  socket_name = "/tmp/attendance.socket"
+  config.server.not_nil!.bind_unix socket_name
+  File.chmod socket_name, 0o777
 end
