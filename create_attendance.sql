@@ -19,4 +19,4 @@ CREATE TABLE meetings (
            REFERENCES users(id)
            ON DELETE CASCADE
 );
-
+CREATE INDEX ON meetings (at);
