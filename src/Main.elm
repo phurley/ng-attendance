@@ -212,8 +212,8 @@ update msg model =
 
         GotStatusUpdate result ->
             case result of
-                Ok _ ->
-                    ( { model | mode = Status, flash = "" }, Cmd.none )
+                Ok students ->
+                    ( { model | mode = Status, checkedIn = students, flash = "" }, Cmd.none )
 
                 Err m ->
                     ( { model | flash = "Something failed during status update -- sorry." }, Cmd.none )
